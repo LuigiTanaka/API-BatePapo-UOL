@@ -106,9 +106,28 @@ app.post("/messages", async (req, res) => {
 });
 
 app.get("/messages", async (req, res) => {
+    const limite = parseInt(req.query.limit);
+    const usuario = req.headers.user;
+
     try {
         const mensagens = await db.collection("mensagens").find().toArray();
-        res.status(200).send(mensagens);
+
+        const mensagensFiltradas = mensagens.filter(mensagem => {
+            if(mensagem.type === "status" || mensagem.type === "message") {
+                return mensagem;
+            } else if(mensagem.from === usuario || mensagem.to === usuario) {
+                return mensagem;
+            }
+        });
+
+        if (!limite) {
+            res.status(200).send(mensagensFiltradas);
+            return;
+        }
+        
+        const fim = mensagensFiltradas.length; 
+        const inicio = fim - limite;
+        res.status(200).send(mensagensFiltradas.slice(inicio, fim));
     } catch (error) {
         res.status(500).send("Ocorreu algum problema ao tentar buscar as mensagens");
     }
