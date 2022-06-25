@@ -24,14 +24,14 @@ app.post("/participants", async (req, res) => {
 
     const userSchema = joi.object({ name: joi.string().required() });
     const validacao = userSchema.validate(req.body);
-    if(validacao.error) {
+    if (validacao.error) {
         res.status(422).send("nome inválido");
         return;
     }
 
     try {
         const participantes = await db.collection("participantes").find().toArray();
-        if(participantes.some(participante => participante.name === name)) {
+        if (participantes.some(participante => participante.name === name)) {
             res.status(409).send("nome já existente");
             return;
         }
@@ -77,15 +77,15 @@ app.post("/messages", async (req, res) => {
         from: joi.string()
     });
 
-    const mensagem = { 
+    const mensagem = {
         to,
-        text, 
-        type, 
-        from 
+        text,
+        type,
+        from
     };
 
     const validacao = messageSchema.validate(mensagem);
-    if(validacao.error) {
+    if (validacao.error) {
         res.status(422).send("mensagem inválida");
         return;
     }
@@ -107,15 +107,15 @@ app.post("/messages", async (req, res) => {
 
 app.get("/messages", async (req, res) => {
     const limite = parseInt(req.query.limit);
-    const usuario = req.headers.user;
+    const nomeUsuario = req.headers.user;
 
     try {
         const mensagens = await db.collection("mensagens").find().toArray();
 
         const mensagensFiltradas = mensagens.filter(mensagem => {
-            if(mensagem.type === "status" || mensagem.type === "message") {
+            if (mensagem.type === "status" || mensagem.type === "message") {
                 return mensagem;
-            } else if(mensagem.from === usuario || mensagem.to === usuario) {
+            } else if (mensagem.from === nomeUsuario || mensagem.to === nomeUsuario) {
                 return mensagem;
             }
         });
@@ -124,8 +124,8 @@ app.get("/messages", async (req, res) => {
             res.status(200).send(mensagensFiltradas);
             return;
         }
-        
-        const fim = mensagensFiltradas.length; 
+
+        const fim = mensagensFiltradas.length;
         const inicio = fim - limite;
         res.status(200).send(mensagensFiltradas.slice(inicio, fim));
     } catch (error) {
@@ -133,7 +133,43 @@ app.get("/messages", async (req, res) => {
     }
 });
 
+app.post("/status", async (req, res) => {
+    const nomeUsuario = req.headers.user;
+    try {
+        const usuarioAtivo = await db.collection("participantes").findOne({ name: nomeUsuario });
 
+        if (!usuarioAtivo) {
+            res.status(404).send("usuario inativo");
+        }
+
+        await db.collection("participantes").updateOne({
+            _id: usuarioAtivo._id
+        }, { $set: { lastStatus: Date.now() } });
+
+        res.status(200).send("status do participante atualizado!")
+    } catch (error) {
+        res.status(500).send("Ocorreu algum problema ao tentar atualizar o status do usuario");
+    }
+});
+
+async function removerUsuariosInativos() {
+    const participantes = await db.collection("participantes").find().toArray();
+    participantes.forEach(async participante => {
+        const tempoInativo = Date.now() - participante.lastStatus;
+        if(tempoInativo > 10000) {
+            await db.collection("participantes").deleteOne({ _id: participante._id });
+            await db.collection("mensagens").insertOne({
+                from: participante.name,
+                to: 'Todos', 
+                text: 'sai da sala...', 
+                type: 'status', 
+                time: dayjs().format('HH:mm:ss')
+            });
+        }
+    });
+}
+
+setInterval(removerUsuariosInativos, 15000);
 
 app.listen(5000, () => {
     console.log(chalk.bold.blue("Ta rodando!"));
